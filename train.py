@@ -93,8 +93,9 @@ class Config:
     content_mask_token: str = "[MASK]"
     max_train_trajs: int = -1
     max_eval_trajs: int = -1
-    score_running_norm: bool = True
     score_running_eps: float = 1e-6
+    norm_mode: str = "prefix_only"  # prefix_only|full|none
+    use_ground_truth: bool = False
 
     def __post_init__(self):
         print(f"Using device: {self.device}")
@@ -122,6 +123,9 @@ def resolve_model_dir(model_id: str, cache_dir: str, local_roots: List[str]) -> 
         cand = os.path.join(root, model_id)
         if os.path.isdir(cand):
             return cand
+        alt = os.path.join(root, model_id.replace(".", "___"))
+        if os.path.isdir(alt):
+            return alt
     return download_or_use_id(model_id, cache_dir)
 
 
@@ -198,6 +202,11 @@ def parse_one_item_to_trajectory(item: dict, file_path: str, cfg: Config) -> Opt
                 break
     if not query:
         return None
+    if cfg.use_ground_truth:
+        gt = item.get("ground_truth")
+        if gt:
+            gt_clean = _clean_content(gt, cfg.max_text_len)
+            query = f"{query}\n\n[GROUND_TRUTH]\n{gt_clean}"
 
     is_correct = _get_is_correct(item)
     history = item.get("history", []) or []
@@ -1060,6 +1069,7 @@ def evaluate_auc(
     labels = []
     logits = []
     used_trajs = 0
+    traj_scores = []
 
     eval_trajs = _apply_ablation(trajs, ablation, cfg, seed)
     trunc = cfg.truncate_after_mistake if truncate_after_mistake is None else truncate_after_mistake
@@ -1082,6 +1092,9 @@ def evaluate_auc(
             xhat_hist_detached: List[torch.Tensor] = []
             l2_hist: List[float] = []
             dcos_hist: List[float] = []
+            l2_all: List[float] = []
+            dcos_all: List[float] = []
+            step_scores: List[float] = []
 
             for t in range(min(upto, len(steps))):
                 agent_name, content = steps[t]
@@ -1095,27 +1108,47 @@ def evaluate_auc(
 
                 if scorer is not None:
                     logit = float(scorer(l2, dcos).item())
+                    step_scores.append(logit)
                 else:
-                    if cfg.score_running_norm and len(l2_hist) >= 2:
+                    if cfg.norm_mode == "full":
+                        l2_all.append(float(l2.item()))
+                        dcos_all.append(float(dcos.item()))
+                    elif cfg.norm_mode == "prefix_only" and len(l2_hist) >= 2:
                         l2_mean = float(np.mean(l2_hist))
                         l2_std = float(np.std(l2_hist) + cfg.score_running_eps)
                         dcos_mean = float(np.mean(dcos_hist))
                         dcos_std = float(np.std(dcos_hist) + cfg.score_running_eps)
                         z_l2 = (float(l2.item()) - l2_mean) / l2_std
                         z_cos = (float(dcos.item()) - dcos_mean) / dcos_std
-                        logit = float(z_l2 + z_cos)
+                        step_scores.append(float(z_l2 + z_cos))
                     else:
-                        logit = float((cfg.alpha_l2 * l2 + cfg.beta_cos * dcos).item())
-
-                y = 1 if t == m else 0
-                labels.append(y)
-                logits.append(logit)
+                        step_scores.append(float((cfg.alpha_l2 * l2 + cfg.beta_cos * dcos).item()))
 
                 hist_so_far.append((agent_name, content))
                 xhat_hist_detached.append(x_hat.detach())
                 l2_hist.append(float(l2.item()))
                 dcos_hist.append(float(dcos.item()))
 
+            if scorer is None and cfg.norm_mode == "full":
+                if len(l2_all) >= 2:
+                    l2_mean = float(np.mean(l2_all))
+                    l2_std = float(np.std(l2_all) + cfg.score_running_eps)
+                    dcos_mean = float(np.mean(dcos_all))
+                    dcos_std = float(np.std(dcos_all) + cfg.score_running_eps)
+                    for l2_v, dcos_v in zip(l2_all, dcos_all):
+                        z_l2 = (l2_v - l2_mean) / l2_std
+                        z_cos = (dcos_v - dcos_mean) / dcos_std
+                        step_scores.append(float(z_l2 + z_cos))
+                else:
+                    for l2_v, dcos_v in zip(l2_all, dcos_all):
+                        step_scores.append(float(cfg.alpha_l2 * l2_v + cfg.beta_cos * dcos_v))
+
+            for t, score in enumerate(step_scores):
+                y = 1 if t == m else 0
+                labels.append(y)
+                logits.append(score)
+
+            traj_scores.append({"mistake_idx": int(m), "scores": step_scores})
             used_trajs += 1
 
     labels_arr = np.array(labels, dtype=np.int64)
@@ -1127,6 +1160,7 @@ def evaluate_auc(
         "used_trajs": int(used_trajs),
         "truncate_after_mistake": bool(trunc),
         "ablation": ablation or "none",
+        "norm_mode": cfg.norm_mode if scorer is None else "scorer",
     }
 
     if labels_arr.sum() == 0 or labels_arr.sum() == len(labels_arr):
@@ -1149,6 +1183,20 @@ def evaluate_auc(
     else:
         stats["selected_auc"] = auc_pos
         stats["score_direction"] = "pos"
+    # Step-level accuracy (localization precision): argmax/argmin per trajectory
+    correct = 0
+    total = 0
+    use_min = stats["score_direction"] == "neg"
+    for tr in traj_scores:
+        if not tr["scores"]:
+            continue
+        pred_idx = int(np.argmin(tr["scores"]) if use_min else np.argmax(tr["scores"]))
+        if pred_idx == tr["mistake_idx"]:
+            correct += 1
+        total += 1
+    stats["accuracy"] = float(correct / total) if total > 0 else None
+    stats["accuracy_correct"] = int(correct)
+    stats["accuracy_total"] = int(total)
     return stats
 
 
@@ -1210,6 +1258,8 @@ def main():
     parser.add_argument("--allow_download", action="store_true")
     parser.add_argument("--llm_stub", action="store_true")
     parser.add_argument("--no_score_running_norm", action="store_true")
+    parser.add_argument("--norm_mode", choices=["prefix_only", "full", "none"], default="prefix_only")
+    parser.add_argument("--use_ground_truth", action="store_true")
     args = parser.parse_args()
 
     cfg = Config()
@@ -1230,7 +1280,11 @@ def main():
     if args.llm_stub:
         cfg.llm_stub = True
     if args.no_score_running_norm:
-        cfg.score_running_norm = False
+        cfg.norm_mode = "none"
+    if args.norm_mode:
+        cfg.norm_mode = args.norm_mode
+    if args.use_ground_truth:
+        cfg.use_ground_truth = True
 
     set_seed(cfg.seed)
 

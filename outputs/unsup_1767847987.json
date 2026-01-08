@@ -1,0 +1,36 @@
+{
+  "mode": "unsup",
+  "notes": [
+    "no_true_normal: using pre-mistake prefixes as pseudo-normal",
+    "prefix_trajs=139"
+  ],
+  "seed": 42,
+  "eval_truncate_True": {
+    "total_steps": 423,
+    "anomaly_steps": 86,
+    "normal_steps": 337,
+    "used_trajs": 86,
+    "truncate_after_mistake": true,
+    "ablation": "none",
+    "auc_pos": 0.3190601062728591,
+    "auc_neg": 0.680939893727141,
+    "anom_mean": -1.7537772249230315,
+    "norm_mean": -0.5750355696418138,
+    "selected_auc": 0.680939893727141,
+    "score_direction": "neg"
+  },
+  "eval_truncate_False": {
+    "total_steps": 573,
+    "anomaly_steps": 86,
+    "normal_steps": 487,
+    "used_trajs": 86,
+    "truncate_after_mistake": false,
+    "ablation": "none",
+    "auc_pos": 0.3204718017286663,
+    "auc_neg": 0.6795281982713337,
+    "anom_mean": -1.7537772249230315,
+    "norm_mean": -0.8085096348784151,
+    "selected_auc": 0.6795281982713337,
+    "score_direction": "neg"
+  }
+}

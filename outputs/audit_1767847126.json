@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "total_trajectories": 184,
+    "correct": 0,
+    "incorrect": 184,
+    "incorrect_mistake_idx_mapped": 184,
+    "incorrect_mistake_idx_failed": 0
+  },
+  "subsets": {
+    "Hand-Crafted": {
+      "file_count": 58,
+      "raw_items": 58,
+      "parsed_trajectories": 58,
+      "is_correct_true": 0,
+      "is_corrected_true": 0
+    },
+    "Algorithm-Generated": {
+      "file_count": 126,
+      "raw_items": 126,
+      "parsed_trajectories": 126,
+      "is_correct_true": 0,
+      "is_corrected_true": 0
+    },
+    "Unknown": {
+      "file_count": 0,
+      "raw_items": 0,
+      "parsed_trajectories": 0,
+      "is_correct_true": 0,
+      "is_corrected_true": 0
+    }
+  },
+  "mapping_methods": {
+    "A_agent_local": 84,
+    "B_agent_global": 31,
+    "C_raw_to_agent": 54,
+    "D_raw_to_agent_relaxed": 14,
+    "E_raw_to_agent_closest": 1
+  },
+  "mistake_idx": {
+    "min": 0,
+    "max": 39,
+    "mean": 4.978260869565218,
+    "median": 4.0,
+    "hist": {
+      "12": 3,
+      "9": 2,
+      "28": 1,
+      "7": 7,
+      "14": 2,
+      "8": 8,
+      "6": 9,
+      "23": 2,
+      "4": 30,
+      "3": 21,
+      "1": 24,
+      "10": 3,
+      "0": 21,
+      "15": 1,
+      "5": 23,
+      "34": 2,
+      "37": 1,
+      "2": 20,
+      "13": 1,
+      "39": 1,
+      "11": 1,
+      "18": 1
+    }
+  },
+  "fail_samples": [],
+  "step_len": {
+    "min": 1,
+    "max": 60,
+    "mean": 11.771739130434783,
+    "median": 7.0
+  }
+}

@@ -1,0 +1,12 @@
+.model_cache/
+models/
+__pycache__/
+.ipynb_checkpoints/
+logs/
+*.pyc
+.pseudo_normal_cache.jsonl
+outputs/*.json
+!outputs/summary.md
+!outputs/audit_1767847126.json
+!outputs/unsup_1767847987.json
+!outputs/ablation_1767846393.json

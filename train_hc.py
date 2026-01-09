@@ -26,6 +26,12 @@ def main():
     parser.add_argument("--hc_oversample", type=int, default=1)
     parser.add_argument("--alpha_l2", type=float, default=None)
     parser.add_argument("--beta_cos", type=float, default=None)
+    parser.add_argument("--clean_ratio", type=float, default=1.0)
+    parser.add_argument("--clean_epochs", type=int, default=0)
+    parser.add_argument("--lambda_proto", type=float, default=None)
+    parser.add_argument("--norm_min_steps", type=int, default=2)
+    parser.add_argument("--clean_scope", choices=["all", "hc"], default="all")
+    parser.add_argument("--lr", type=float, default=None)
     args = parser.parse_args()
 
     cfg = base.Config()
@@ -40,6 +46,12 @@ def main():
         cfg.alpha_l2 = args.alpha_l2
     if args.beta_cos is not None:
         cfg.beta_cos = args.beta_cos
+    if args.lambda_proto is not None:
+        cfg.lambda_proto = args.lambda_proto
+    if args.norm_min_steps is not None:
+        cfg.norm_min_steps = args.norm_min_steps
+    if args.lr is not None:
+        cfg.lr = args.lr
     if args.truncate_after_mistake:
         cfg.truncate_after_mistake = True
     if args.no_truncate_after_mistake:
@@ -83,6 +95,55 @@ def main():
 
         base.init_prototype_simple(encoder, masc, train_trajs, max_steps=800)
         base.train(train_trajs, encoder, masc, cfg)
+
+        if args.clean_ratio < 1.0 and args.clean_epochs > 0:
+            def mean_raw_score(tr):
+                m = tr.get("mistake_idx", -1)
+                if m is None or m < 0:
+                    return None
+                q = tr["query"]
+                steps = tr["steps"]
+                upto = min(m + 1, len(steps))
+                hist_so_far = []
+                xhat_hist_detached = []
+                scores = []
+                with base.torch.no_grad():
+                    for t in range(upto):
+                        agent_name, content = steps[t]
+                        q_tilde, h_tilde = encoder(q, hist_so_far)
+                        gt = encoder.step_gt(agent_name, content)
+                        x_hat = masc(q_tilde, h_tilde)
+                        p_ctx = masc.proto_ctx(xhat_hist_detached)
+                        l2 = base.F.mse_loss(x_hat, gt)
+                        dcos = 1 - base.F.cosine_similarity(x_hat, p_ctx).mean()
+                        scores.append(float(cfg.alpha_l2 * l2 + cfg.beta_cos * dcos))
+                        hist_so_far.append((agent_name, content))
+                        xhat_hist_detached.append(x_hat.detach())
+                if not scores:
+                    return None
+                return float(base.np.mean(scores))
+
+            scored = []
+            if args.clean_scope == "hc":
+                candidates = [t for t in raw_train_trajs if t.get("subset") == "Hand-Crafted"]
+            else:
+                candidates = raw_train_trajs
+            for tr in candidates:
+                s = mean_raw_score(tr)
+                if s is not None:
+                    scored.append((s, tr))
+            if scored:
+                scored.sort(key=lambda x: x[0])
+                keep = max(1, int(len(scored) * args.clean_ratio))
+                clean_trajs = [tr for _, tr in scored[:keep]]
+                clean_prefix = base.build_prefix_normal_trajectories(clean_trajs, cfg)
+                if clean_prefix:
+                    notes.append(f"clean_ratio={args.clean_ratio}")
+                    notes.append(f"clean_prefix_trajs={len(clean_prefix)}")
+                    orig_epochs = cfg.epochs
+                    cfg.epochs = args.clean_epochs
+                    base.train(clean_prefix, encoder, masc, cfg)
+                    cfg.epochs = orig_epochs
 
         if args.hc_finetune_epochs > 0:
             hc_trajs = [t for t in raw_train_trajs if t.get("subset") == "Hand-Crafted"]

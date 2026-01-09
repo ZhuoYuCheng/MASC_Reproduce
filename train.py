@@ -95,6 +95,7 @@ class Config:
     max_eval_trajs: int = -1
     score_running_eps: float = 1e-6
     norm_mode: str = "prefix_only"  # prefix_only|full|none
+    norm_min_steps: int = 2
     use_ground_truth: bool = False
 
     def __post_init__(self):
@@ -1113,7 +1114,7 @@ def evaluate_auc(
                     if cfg.norm_mode == "full":
                         l2_all.append(float(l2.item()))
                         dcos_all.append(float(dcos.item()))
-                    elif cfg.norm_mode == "prefix_only" and len(l2_hist) >= 2:
+                    elif cfg.norm_mode == "prefix_only" and len(l2_hist) >= cfg.norm_min_steps:
                         l2_mean = float(np.mean(l2_hist))
                         l2_std = float(np.std(l2_hist) + cfg.score_running_eps)
                         dcos_mean = float(np.mean(dcos_hist))

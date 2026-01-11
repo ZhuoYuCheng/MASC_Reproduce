@@ -7,12 +7,13 @@
 ## Quick commands
 ```bash
 python train.py --mode audit
-python train.py --mode unsup
-python train.py --mode weak
+python train.py --mode unsup --norm_mode prefix_only
 python train.py --mode weak --ablate all
+python train_hc.py --mode unsup --norm_mode prefix_only
+python train_hc.py --mode weak --ablate all
 python train.py --mode unsup --llm_stub
 python train.py --mode weak --llm_stub --max_train_trajs 20 --max_eval_trajs 20
-python train.py --mode unsup --no_score_running_norm
+python train.py --mode unsup --norm_mode none
 ```
 
 ## Output locations
@@ -23,7 +24,8 @@ python train.py --mode unsup --no_score_running_norm
 
 ## Notes on settings
 - Unsupervised mode never uses `mistake_idx` as labels. If no true normal trajectories exist, it uses pre-mistake prefixes as pseudo-normal. If that is still empty and `use_pseudo_normal_training` is enabled, it generates pseudo-normal steps by LLM prompting (cached in `./.pseudo_normal_cache.jsonl`).
-- Evaluation prints both truncate and full ranges to avoid leakage from post-mistake contamination.
+- Evaluation always truncates to the mistake step (truncate=False was removed) to avoid post-mistake leakage.
+- `--norm_mode` controls scoring normalization: `prefix_only` uses running stats up to the current step, `full` uses stats over the evaluated prefix, and `none` disables normalization.
 - Mapping methods:
   - `A_agent_local`: mistake_step is per-agent index.
   - `B_agent_global`: mistake_step is global agent step index.
@@ -34,4 +36,8 @@ python train.py --mode unsup --no_score_running_norm
 - No `is_correct` or `is_corrected` true: unsupervised mode will switch to prefix mining or pseudo-normal generation.
 - Model download blocked: set `--allow_download` only if network access is available; otherwise keep cached models and `local_files_only`.
 - If running on CPU, use `--llm_stub` for a lightweight debug backbone; disable it for paper-aligned runs on GPU.
-- Unsupervised scoring uses per-trajectory running normalization by default; disable with `--no_score_running_norm`.
+
+## Project structure
+- `masc/`: core modules (config, data parsing/mapping, models, training, evaluation, utilities).
+- `train.py`: main CLI for AG+HC experiments.
+- `train_hc.py`: HC-focused CLI (train on HC+AG, test on HC).

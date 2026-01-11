@@ -16,6 +16,6 @@ fi
 
 CMD="/root/miniconda3/bin/python train.py --mode ${RUN_TAG}"
 echo "Starting: ${CMD}"
-tmux new-session -d -s "${TMUX_SESSION}" "cd /root/autodl-tmp/xxx && ${CMD} 2>&1 | tee ${LOG}"
+tmux new-session -d -s "${TMUX_SESSION}" "cd /root/autodl-tmp/MASC_Reproduce && ${CMD} 2>&1 | tee ${LOG}"
 echo "tmux session: ${TMUX_SESSION}"
 echo "log file: ${LOG}"
